@@ -8,3 +8,5 @@ http://novel.ict.ac.cn/ychen/pdf/DianNao.pdf
 * Currently, Makefile is configured for example layers from VGG16.
 https://arxiv.org/abs/1409.1556
 
+# Forked for CS259 Mini-Project
+
