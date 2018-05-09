@@ -1,132 +1,96 @@
 import numpy, tvm, argparse
 
-parser = argparse.ArgumentParser()
-
-parser.add_argument(
-    '--config', action = 'store', type=int,
-    dest = 'config', default = 1,
-    help = 'The configuration of the convolution to be explored.'
-)
-
-parser.add_argument(
-    '--batch', action = 'store', type=int,
-    dest = 'batch', default = 1,
-    help = 'The batch size of the computaion'
-)
-
-parser.add_argument(
-    '--show-gpu-src', action = 'store_true',
-    dest = 'show_gpu_src',
-    help = 'The batch size of the computaion'
-)
-
-parser.add_argument(
-    '--disable-gpu', action = 'store_true',
-    dest = 'no_gpu',
-    help = 'The batch size of the computaion'
-)
-
-parser.add_argument(
-    '--disable-cpu', action = 'store_true',
-    dest = 'no_cpu',
-    help = 'The batch size of the computaion'
-)
-
-
-args = vars(parser.parse_args())
-print(args)
-
 dtype = 'float32'
 
-batch = args.get('batch')
+def conv_layer(Nx, Ny, batch, Ni, Nn, Kx, Ky, batch_inner = True):
+    NyPad = Ny + Ky - 1
+    NxPad = Nx + Kx - 1
 
-if args.get('config') == 1:
-    Ny = 224
-    Nx = 224
-    Ni = 64
-    Nn = 64
+    neuron_i = tvm.placeholder((NyPad, NxPad, Ni, batch), name = 'neuron_i', dtype = dtype)
+    synapse  = tvm.placeholder((Ny, Nx, Nn, Ni), name = 'synapse', dtype = dtype)
 
-    Kx = 3
-    Ky = 3
-else:
-    Ny = 14
-    Nx = 14
-    Ni = 512
-    Nn = 512
+    ky = tvm.reduce_axis((0, Ky), name='ky')
+    kx = tvm.reduce_axis((0, Kx), name='kx')
+    i = tvm.reduce_axis((0, Ni), name='i')
 
-    Kx = 3
-    Ky = 3
+    if batch_inner:
+        neuron_n = tvm.compute(
+            (Ny, Nx, Nn, batch),
+            lambda y, x, n, b:
+                tvm.sum(synapse[ky][kx][n][i] * neuron_i[y + ky][x + kx][i][b],
+            axis=[ky, kx, i]),
+            name='neuron_n'
+        )
+    else:
+        neuron_n = tvm.compute(
+            (batch, Ny, Nx, Nn),
+            lambda b, y, x, n:
+                tvm.sum(synapse[ky][kx][n][i] * neuron_i[y + ky][x + kx][i][b],
+            axis=[ky, kx, i]),
+            name='neuron_n'
+        )
 
-NyPad = Ny + Ky - 1
-NxPad = Nx + Kx - 1
+    print(tvm.lower(tvm.create_schedule(neuron_n.op), [neuron_i, synapse, neuron_n], simple_mode = True))
+    return neuron_i, synapse, neuron_n
 
-neuron_i = tvm.placeholder((NyPad, NxPad, Ni, batch), name = 'neuron_i', dtype = dtype)
-synapse  = tvm.placeholder((Ny, Nx, Nn, Ni), name = 'synapse', dtype = dtype)
 
-ky = tvm.reduce_axis((0, Ky), name='ky')
-kx = tvm.reduce_axis((0, Kx), name='kx')
-i = tvm.reduce_axis((0, Ni), name='i')
+def prepare_args(Nx, Ny, batch, Ni, Nn, Kx, Ky, batch_inner = True):
+    NyPad = Ny + Ky - 1
+    NxPad = Nx + Kx - 1
 
-neuron_n = tvm.compute(
-        (Ny, Nx, Nn, batch), 
-        lambda y, x, n, b:
-            tvm.sum(synapse[ky][kx][n][i] * neuron_i[y + ky][x + kx][i][b],
-        axis=[ky, kx, i]),
-        name='neuron_n'
-)
+    np_neuron_i = numpy.random.uniform(size = (NyPad, NxPad, Ni, batch)).astype(dtype)
+    np_synapse  = numpy.random.uniform(size = (Ny, Nx, Nn, Ni)).astype(dtype)
 
-np_neuron_i = numpy.random.uniform(size = (NyPad, NxPad, Ni, batch)).astype(dtype)
-np_synapse  = numpy.random.uniform(size = (Ny, Nx, Nn, Ni)).astype(dtype)
-np_neuron_n = numpy.zeros((Ny, Nx, Nn, batch)).astype(dtype)
+    out_shape = (Ny, Nx, Nn, batch) if batch_inner else (batch, Ny, Nx, Nn)
+    np_neuron_n = numpy.zeros(out_shape).astype(dtype)
 
-print('Data preparation done...')
+    cpu_args = [
+        tvm.nd.array(np_neuron_i, tvm.cpu(0)),
+        tvm.nd.array(np_synapse, tvm.cpu(0)),
+        tvm.nd.array(np_neuron_n, tvm.cpu(0))
+    ]
+    
+    gpu_args = [
+        tvm.nd.array(np_neuron_i, tvm.gpu(0)),
+        tvm.nd.array(np_synapse, tvm.gpu(0)),
+        tvm.nd.array(np_neuron_n, tvm.gpu(0))
+    ]
 
-def test_cpu():
+    return cpu_args, gpu_args
+
+
+def schedule_cpu(triple):
+    neuron_i, synapse, neuron_n = triple
     sch = tvm.create_schedule(neuron_n.op)
     
     y, x, n, b = sch[neuron_n].op.axis
+    ky, kx, i = sch[neuron_n].op.reduce_axis
     sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
     
-    print(tvm.lower(sch, [neuron_i, synapse, neuron_n], simple_mode = True))
-    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'llvm')
+    print(tvm.lower(sch, triple, simple_mode = True))
+    func = tvm.build(sch, triple, target = 'llvm')
     assert func
     print('CPU compilation done...')
 
-    nd_neuron_i = tvm.nd.array(np_neuron_i, tvm.cpu(0))
-    nd_synapse  = tvm.nd.array(np_synapse, tvm.cpu(0))
-    nd_neuron_n = tvm.nd.array(np_neuron_n, tvm.cpu(0))
-    
-    evaluator = func.time_evaluator(func.entry_name, tvm.cpu(0), number = 5)
-    print('CPU Convolution: %.2f ms' % (evaluator(nd_neuron_i, nd_synapse, nd_neuron_n).mean * 1000))
-
-
-def schedule_conv2():
-    sch = tvm.create_schedule(neuron_n.op)
-    
-    block_x = tvm.thread_axis("blockIdx.x")
-    block_y = tvm.thread_axis("blockIdx.y")
-    block_z = tvm.thread_axis("blockIdx.z")
-    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
-    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
-    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
-
-    y, x, n, b = sch[neuron_n].op.axis
-    yx = sch[neuron_n].fuse(y, x)
-    no, ni = sch[neuron_n].split(n, nparts = 32)
-    sch[neuron_n].reorder(yx, no, ni, ky, kx, i, b)
-    sch[neuron_n].bind(yx, block_y)
-    sch[neuron_n].bind(no, block_x)
-    sch[neuron_n].bind(ni, thread_x)
-
-    print(tvm.lower(sch, [neuron_i, synapse, neuron_n], simple_mode = True))
-    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
-    assert func
-    print('GPU Compilation Done...')
     return func
 
-def schedule_conv1():
+def test_cpu(func, cpu_args):
+    evaluator = func.time_evaluator(func.entry_name, tvm.cpu(0), number = 5)
+    ms = evaluator(*cpu_args).mean
+    print('CPU Convolution: %.2f ms' % (ms * 1000))
+
+
+def test_gpu(func, gpu_args):
+    #print(func.imported_modules[0].get_source())
+    evaluator = func.time_evaluator(func.entry_name, tvm.gpu(0), number = 5)
+    print('GPU Convolution: %.2f ms' % (evaluator(*gpu_args).mean * 1000))
+
+def schedule_conv1_1(triple):
+    neuron_i, synapse, neuron_n = triple
+
     sch = tvm.create_schedule(neuron_n.op)
-    
+
+    #TBD: shared memory
     #shared_neuron = sch.cache_read(neuron_i, 'shared', [neuron_n])
     #shared_synaps = sch.cache_read(synapse, 'shared', [neuron_n])
     #local_neuron  = sch.cache_read(shared_neuron, 'local', [neuron_n])
@@ -141,15 +105,17 @@ def schedule_conv1():
     thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
 
     y, x, n, b = sch[neuron_n].op.axis
-    yo, yi = sch[neuron_n].split(y, nparts = 32)
-    xo, xi = sch[neuron_n].split(x, nparts = 32)
-    no, ni = sch[neuron_n].split(n, nparts = 8)
-    sch[neuron_n].reorder(yo, xo, yi, xi, no, ni, ky, kx, i, b)
+    ky, kx, i = sch[neuron_n].op.reduce_axis
+    yo, yi = sch[neuron_n].split(y, nparts = 16)
+    xo, xi = sch[neuron_n].split(x, nparts = 16)
+    no, ni = sch[neuron_n].split(n, nparts = 16)
+    sch[neuron_n].reorder(yo, xo, no, yi, xi, ni, ky, kx, i)
     sch[neuron_n].bind(yo, block_z)
     sch[neuron_n].bind(xo, block_y)
-    sch[neuron_n].bind(yi, block_x)
+    sch[neuron_n].bind(no, block_x)
+    sch[neuron_n].bind(yi, thread_z)
     sch[neuron_n].bind(xi, thread_y)
-    sch[neuron_n].bind(no, thread_x)
+    sch[neuron_n].bind(ni, thread_x)
 
     print(tvm.lower(sch, [neuron_i, synapse, neuron_n], simple_mode = True))
     func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
@@ -157,20 +123,157 @@ def schedule_conv1():
     print('GPU Compilation Done...')
     return func
 
-def test_gpu(func):
-    if args['show_gpu_src']:
-        print(func.imported_modules[0].get_source())
+#cpu_args, gpu_args = prepare_args(224, 224, 1, 64, 64, 3, 3)
+#Latency: 987.99ms
+#test_cpu(schedule_cpu(conv1_1), cpu_args)
+#Latency: 37.96 ms
+#conv1_1  = conv_layer(224, 224, 1, 64, 64, 3, 3)
+#test_gpu(schedule_conv1_1(conv1_1), gpu_args)
 
-    nd_neuron_i = tvm.nd.array(np_neuron_i, tvm.gpu(0))
-    nd_synapse  = tvm.nd.array(np_synapse, tvm.gpu(0))
-    nd_neuron_n = tvm.nd.array(np_neuron_n, tvm.gpu(0))
-    
-    evaluator = func.time_evaluator(func.entry_name, tvm.gpu(0), number = 5)
-    print('GPU Convolution: %.2f ms' % (evaluator(nd_neuron_i, nd_synapse, nd_neuron_n).mean * 1000))
+def schedule_conv1_2(triple):
+    neuron_i, synapse, neuron_n = triple
 
-if not args['no_cpu']:
-    test_cpu()
+    sch = tvm.create_schedule(neuron_n.op)
 
-if not args['no_gpu']:
-    test_gpu(eval('schedule_conv%d()' % args.get('config')))
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    b, y, x, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    ky, kx, i = sch[neuron_n].op.reduce_axis
+    yo, yi = sch[neuron_n].split(y, nparts = 32)
+    xo, xi = sch[neuron_n].split(x, nparts = 32)
+    no, ni = sch[neuron_n].split(n, nparts = 16)
+    sch[neuron_n].reorder(yo, xo, no, yi, xi, ni, b, ky, kx, i)
+    nib = sch[neuron_n].fuse(ni, b)
+    sch[neuron_n].bind(yo, block_z)
+    sch[neuron_n].bind(xo, block_y)
+    sch[neuron_n].bind(no, block_x)
+    sch[neuron_n].bind(yi, thread_z)
+    sch[neuron_n].bind(xi, thread_y)
+    sch[neuron_n].bind(nib, thread_x)
+
+    print(tvm.lower(sch, [neuron_i, synapse, neuron_n], simple_mode = True))
+    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
+    assert func
+    print('GPU Compilation Done...')
+    return func
+
+#51.56ms
+#cpu_args, gpu_args = prepare_args(224, 224, 2, 64, 64, 3, 3, False)
+#conv1_2  = conv_layer(224, 224, 2, 64, 64, 3, 3, False)
+#test_gpu(schedule_conv1_2(conv1_2), gpu_args)
+
+def schedule_conv1_8(triple):
+    neuron_i, synapse, neuron_n = triple
+
+    sch = tvm.create_schedule(neuron_n.op)
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 16), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    b, y, x, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    ky, kx, i = sch[neuron_n].op.reduce_axis
+    yo, yi = sch[neuron_n].split(y, nparts = 32)
+    xo, xi = sch[neuron_n].split(x, nparts = 32)
+    no, ni = sch[neuron_n].split(n, nparts = 32)
+    sch[neuron_n].reorder(yo, xo, no, yi, xi, b, ni, ky, kx, i)
+    sch[neuron_n].bind(yo, block_z)
+    sch[neuron_n].bind(xo, block_y)
+    sch[neuron_n].bind(no, block_x)
+    bni = sch[neuron_n].fuse(b, ni)
+    sch[neuron_n].bind(yi, thread_z)
+    sch[neuron_n].bind(xi, thread_y)
+    sch[neuron_n].bind(bni, thread_x)
+
+    print(tvm.lower(sch, [neuron_i, synapse, neuron_n], simple_mode = True))
+    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
+    assert func
+    print('GPU Compilation Done...')
+    return func
+
+#128.22 ms
+#cpu_args, gpu_args = prepare_args(224, 224, 8, 64, 64, 3, 3, False)
+#conv1_8  = conv_layer(224, 224, 8, 64, 64, 3, 3, False)
+#test_gpu(schedule_conv1_8(conv1_8), gpu_args)
+
+def schedule_conv1_16(triple):
+    neuron_i, synapse, neuron_n = triple
+
+    sch = tvm.create_schedule(neuron_n.op)
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 16), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    b, y, x, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    ky, kx, i = sch[neuron_n].op.reduce_axis
+    yo, yi = sch[neuron_n].split(y, nparts = 32)
+    xo, xi = sch[neuron_n].split(x, nparts = 32)
+    no, ni = sch[neuron_n].split(n, nparts = 32)
+    sch[neuron_n].reorder(yo, xo, no, yi, xi, b, ni, ky, kx, i)
+    sch[neuron_n].bind(yo, block_z)
+    sch[neuron_n].bind(xo, block_y)
+    sch[neuron_n].bind(no, block_x)
+    sch[neuron_n].bind(yi, thread_z)
+    sch[neuron_n].bind(xi, thread_y)
+    sch[neuron_n].bind(b, thread_x)
+
+    print(tvm.lower(sch, [neuron_i, synapse, neuron_n], simple_mode = True))
+    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
+    assert func
+    print('GPU Compilation Done...')
+    return func
+
+#199.49ms
+#cpu_args, gpu_args = prepare_args(224, 224, 16, 64, 64, 3, 3, False)
+#conv1_16  = conv_layer(224, 224, 16, 64, 64, 3, 3, False)
+#test_gpu(schedule_conv1_16(conv1_16), gpu_args)
+
+def schedule_conv2(triple):
+    neuron_i, synapse, neuron_n = triple
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    sch = tvm.create_schedule(neuron_n.op)
+
+    y, x, n, b = sch[neuron_n].op.axis
+    ky, kx, i = sch[neuron_n].op.reduce_axis
+    yx = sch[neuron_n].fuse(y, x)
+    no, ni = sch[neuron_n].split(n, nparts = 32)
+    sch[neuron_n].reorder(yx, no, ni, ky, kx, i, b)
+    sch[neuron_n].bind(yx, block_y)
+    sch[neuron_n].bind(no, block_x)
+    sch[neuron_n].bind(ni, thread_x)
+
+    print(tvm.lower(sch, triple, simple_mode = True))
+    func = tvm.build(sch, triple, target = 'cuda')
+    assert func
+    print('GPU Compilation Done...')
+    return func
+
+
+#conv2_1  = conv_layer(14, 14, 512, 512, 3, 3, 1)
+#conv2_2  = conv_layer(14, 14, 512, 512, 3, 3, 2)
+#conv2_8  = conv_layer(14, 14, 512, 512, 3, 3, 8)
+#conv2_16 = conv_layer(14, 14, 512, 512, 3, 3, 16)
+
 
