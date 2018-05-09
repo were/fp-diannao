@@ -92,6 +92,11 @@ def schedule_gpu1_1(four):
     thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
     thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
 
+    ro, ri = sch[temp].split(temp.op.reduce_axis[0], 4)
+    roo, roi = sch[temp].split(ro, 4)
+    sch[temp].vectorize(ri)
+    sch[temp].unroll(roi)
+
     sch[neuron_n].bind(noo, block_y)
     sch[neuron_n].bind(noi, block_x)
     sch[neuron_n].bind(nio, thread_y)
@@ -110,7 +115,7 @@ def schedule_gpu1_1(four):
 #class1_1 = class_layer(25088, 4096, 1)
 #Latency: 109.26 ms
 #test_cpu(schedule_cpu(class1_1), cpu_args)
-#Latency: 8.03 ms
+#Latency: 4.13 ms
 #test_gpu(schedule_gpu1_1(class1_1), gpu_args)
 
 def schedule_gpu1_16(four):
@@ -119,9 +124,9 @@ def schedule_gpu1_16(four):
     
     b, n = sch[neuron_n].op.axis
     print(sch[neuron_n].op.axis)
-    no, ni = sch[neuron_n].split(n, nparts = 49)
-    noo, noi = sch[neuron_n].split(no, nparts = 7)
-    nio, nii = sch[neuron_n].split(ni, nparts = 16)
+    no, ni = sch[neuron_n].split(n, 49)
+    noo, noi = sch[neuron_n].split(no, nparts = 16)
+    nio, nii = sch[neuron_n].split(ni, nparts = 7)
     sch[temp].compute_at(sch[neuron_n], nii)
 
     block_x = tvm.thread_axis("blockIdx.x")
@@ -137,6 +142,10 @@ def schedule_gpu1_16(four):
     sch[neuron_n].bind(nio, thread_y)
     sch[neuron_n].bind(nii, thread_x)
 
+    ro, ri = sch[temp].split(temp.op.reduce_axis[0], 4)
+    roo, roi = sch[temp].split(ro, 4)
+    sch[temp].vectorize(ri)
+    sch[temp].unroll(roi)
     #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
     
     print(tvm.lower(sch, four, simple_mode = True))
@@ -146,10 +155,9 @@ def schedule_gpu1_16(four):
 
     return func
 
-cpu_args, gpu_args = prepare_args(25088, 4096, 16)
-class1_16 = class_layer(25088, 4096, 16)
-
-#Latency: 104.16 ms
+#cpu_args, gpu_args = prepare_args(25088, 4096, 16)
+#class1_16 = class_layer(25088, 4096, 16)
+#Latency: 29.79 ms
 #test_gpu(schedule_gpu1_16(class1_16), gpu_args)
 
 def schedule_gpu1_32(four):
@@ -178,6 +186,10 @@ def schedule_gpu1_32(four):
     sch[neuron_n].bind(nio, thread_y)
     sch[neuron_n].bind(nii, thread_x)
 
+    ro, ri = sch[temp].split(temp.op.reduce_axis[0], 4)
+    roo, roi = sch[temp].split(ro, 4)
+    sch[temp].vectorize(ri)
+    sch[temp].unroll(roi)
     #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
     
     print(tvm.lower(sch, four, simple_mode = True))
@@ -189,7 +201,7 @@ def schedule_gpu1_32(four):
 
 #cpu_args, gpu_args = prepare_args(25088, 4096, 32)
 #class1_32 = class_layer(25088, 4096, 32)
-#Latency: 206.78 ms
+#Latency: 96.48 ms
 #test_gpu(schedule_gpu1_32(class1_32), gpu_args)
 
 def schedule_gpu2_1(four):
@@ -224,8 +236,8 @@ def schedule_gpu2_1(four):
 
     return func
 
-cpu_args, gpu_args = prepare_args(4096, 1024, 1)
-class2_1 = class_layer(4096, 1024, 1)
+#cpu_args, gpu_args = prepare_args(4096, 1024, 1)
+#class2_1 = class_layer(4096, 1024, 1)
 #Latency: 4.37ms
 #test_cpu(schedule_cpu(class2_1), cpu_args)
 #Latency: 0.35ms
@@ -249,6 +261,11 @@ def schedule_gpu2_2(four):
     thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
     thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
 
+    ro, ri = sch[temp].split(temp.op.reduce_axis[0], 4)
+    roo, roi = sch[temp].split(ro, 4)
+    sch[temp].vectorize(ri)
+    sch[temp].unroll(roi)
+
     bnoo = sch[neuron_n].fuse(b, noo)
     sch[neuron_n].bind(bnoo, block_y)
     sch[neuron_n].bind(noi, block_x)
@@ -266,7 +283,7 @@ def schedule_gpu2_2(four):
 
 #cpu_args, gpu_args = prepare_args(4096, 1024, 2)
 #class2_2 = class_layer(4096, 1024, 2)
-#Latency: 0.61ms
+#Latency: 0.18ms
 #test_gpu(schedule_gpu2_2(class2_2), gpu_args)
 
 def schedule_gpu2_4(four):
@@ -280,6 +297,11 @@ def schedule_gpu2_4(four):
     #noo, noi = sch[neuron_n].split(no, nparts = 8)
     #nio, nii = sch[neuron_n].split(ni, nparts = 8)
     sch[temp].compute_at(sch[neuron_n], ni)
+
+    ro, ri = sch[temp].split(temp.op.reduce_axis[0], 4)
+    roo, roi = sch[temp].split(ro, 4)
+    sch[temp].vectorize(ri)
+    sch[temp].unroll(roi)
 
     block_x = tvm.thread_axis("blockIdx.x")
     block_y = tvm.thread_axis("blockIdx.y")
@@ -302,7 +324,22 @@ def schedule_gpu2_4(four):
 
     return func
 
-cpu_args, gpu_args = prepare_args(4096, 1024, 128)
-class2_4 = class_layer(4096, 1024, 128)
-#Latency: 18.12ms
-test_gpu(schedule_gpu2_4(class2_4), gpu_args)
+#cpu_args, gpu_args = prepare_args(4096, 1024, 16)
+#class2_4 = class_layer(4096, 1024, 16)
+#Latency: 0.36 ms
+#test_gpu(schedule_gpu2_4(class2_4), gpu_args)
+
+#cpu_args, gpu_args = prepare_args(4096, 1024, 32)
+#class2_4 = class_layer(4096, 1024, 32)
+#Latency: 0.4 ms
+#test_gpu(schedule_gpu2_4(class2_4), gpu_args)
+
+#cpu_args, gpu_args = prepare_args(4096, 1024, 64)
+#class2_4 = class_layer(4096, 1024, 64)
+#Latency: 0.64 ms
+#test_gpu(schedule_gpu2_4(class2_4), gpu_args)
+
+#cpu_args, gpu_args = prepare_args(4096, 1024, 128)
+#class2_4 = class_layer(4096, 1024, 128)
+##Latency: 4.3 ms
+#test_gpu(schedule_gpu2_4(class2_4), gpu_args)
