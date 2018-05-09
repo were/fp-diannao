@@ -106,10 +106,203 @@ def schedule_gpu1_1(four):
 
     return func
 
-cpu_args, gpu_args = prepare_args(25088, 4096, 1)
-class1_1 = class_layer(25088, 4096, 1)
+#cpu_args, gpu_args = prepare_args(25088, 4096, 1)
+#class1_1 = class_layer(25088, 4096, 1)
 #Latency: 109.26 ms
 #test_cpu(schedule_cpu(class1_1), cpu_args)
 #Latency: 8.03 ms
-test_gpu(schedule_gpu1_1(class1_1), gpu_args)
+#test_gpu(schedule_gpu1_1(class1_1), gpu_args)
 
+def schedule_gpu1_16(four):
+    neuron_i, synapse, temp, neuron_n = four
+    sch = tvm.create_schedule(neuron_n.op)
+    
+    b, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    no, ni = sch[neuron_n].split(n, nparts = 49)
+    noo, noi = sch[neuron_n].split(no, nparts = 7)
+    nio, nii = sch[neuron_n].split(ni, nparts = 16)
+    sch[temp].compute_at(sch[neuron_n], nii)
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    sch[neuron_n].bind(noo, block_z)
+    sch[neuron_n].bind(noi, block_y)
+    sch[neuron_n].bind(b, block_x)
+    sch[neuron_n].bind(nio, thread_y)
+    sch[neuron_n].bind(nii, thread_x)
+
+    #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
+    
+    print(tvm.lower(sch, four, simple_mode = True))
+    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
+    assert func
+    print('GPU compilation done...')
+
+    return func
+
+cpu_args, gpu_args = prepare_args(25088, 4096, 16)
+class1_16 = class_layer(25088, 4096, 16)
+
+#Latency: 104.16 ms
+#test_gpu(schedule_gpu1_16(class1_16), gpu_args)
+
+def schedule_gpu1_32(four):
+    neuron_i, synapse, temp, neuron_n = four
+    sch = tvm.create_schedule(neuron_n.op)
+    
+    b, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    no, ni = sch[neuron_n].split(n, nparts = 49)
+    noo, noi = sch[neuron_n].split(no, nparts = 7)
+    nio, nii = sch[neuron_n].split(ni, nparts = 16)
+    sch[temp].compute_at(sch[neuron_n], nii)
+    bo, bi = sch[neuron_n].split(b, nparts = 16)
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    sch[neuron_n].bind(noo, block_z)
+    sch[neuron_n].bind(noi, block_y)
+    sch[neuron_n].bind(bo, block_x)
+    sch[neuron_n].bind(bi, thread_z)
+    sch[neuron_n].bind(nio, thread_y)
+    sch[neuron_n].bind(nii, thread_x)
+
+    #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
+    
+    print(tvm.lower(sch, four, simple_mode = True))
+    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
+    assert func
+    print('GPU compilation done...')
+
+    return func
+
+#cpu_args, gpu_args = prepare_args(25088, 4096, 32)
+#class1_32 = class_layer(25088, 4096, 32)
+#Latency: 206.78 ms
+#test_gpu(schedule_gpu1_32(class1_32), gpu_args)
+
+def schedule_gpu2_1(four):
+    neuron_i, synapse, temp, neuron_n = four
+    sch = tvm.create_schedule(neuron_n.op)
+    
+    b, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    no, ni = sch[neuron_n].split(n, nparts = 64)
+    noo, noi = sch[neuron_n].split(no, nparts = 8)
+    nio, nii = sch[neuron_n].split(ni, nparts = 8)
+    sch[temp].compute_at(sch[neuron_n], nii)
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    sch[neuron_n].bind(noo, block_y)
+    sch[neuron_n].bind(noi, block_x)
+    sch[neuron_n].bind(nio, thread_y)
+    sch[neuron_n].bind(nii, thread_x)
+
+    #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
+    
+    print(tvm.lower(sch, four, simple_mode = True))
+    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
+    assert func
+    print('GPU compilation done...')
+
+    return func
+
+cpu_args, gpu_args = prepare_args(4096, 1024, 1)
+class2_1 = class_layer(4096, 1024, 1)
+#Latency: 4.37ms
+#test_cpu(schedule_cpu(class2_1), cpu_args)
+#Latency: 0.35ms
+#test_gpu(schedule_gpu2_1(class2_1), gpu_args)
+
+def schedule_gpu2_2(four):
+    neuron_i, synapse, temp, neuron_n = four
+    sch = tvm.create_schedule(neuron_n.op)
+    
+    b, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    no, ni = sch[neuron_n].split(n, nparts = 64)
+    noo, noi = sch[neuron_n].split(no, nparts = 8)
+    nio, nii = sch[neuron_n].split(ni, nparts = 8)
+    sch[temp].compute_at(sch[neuron_n], nii)
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    bnoo = sch[neuron_n].fuse(b, noo)
+    sch[neuron_n].bind(bnoo, block_y)
+    sch[neuron_n].bind(noi, block_x)
+    sch[neuron_n].bind(nio, thread_y)
+    sch[neuron_n].bind(nii, thread_x)
+
+    #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
+    
+    print(tvm.lower(sch, four, simple_mode = True))
+    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
+    assert func
+    print('GPU compilation done...')
+
+    return func
+
+#cpu_args, gpu_args = prepare_args(4096, 1024, 2)
+#class2_2 = class_layer(4096, 1024, 2)
+#Latency: 0.61ms
+#test_gpu(schedule_gpu2_2(class2_2), gpu_args)
+
+def schedule_gpu2_4(four):
+    neuron_i, synapse, temp, neuron_n = four
+    sch = tvm.create_schedule(neuron_n.op)
+    
+    b, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    bo, bi = sch[neuron_n].split(b, nparts = 16)
+    no, ni = sch[neuron_n].split(n, nparts = 64)
+    #noo, noi = sch[neuron_n].split(no, nparts = 8)
+    #nio, nii = sch[neuron_n].split(ni, nparts = 8)
+    sch[temp].compute_at(sch[neuron_n], ni)
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    sch[neuron_n].bind(no, block_y)
+    sch[neuron_n].bind(ni, block_z)
+    sch[neuron_n].bind(bo, thread_y)
+    sch[neuron_n].bind(bi, thread_x)
+
+    #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
+    
+    print(tvm.lower(sch, four, simple_mode = True))
+    func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
+    assert func
+    print('GPU compilation done...')
+
+    return func
+
+cpu_args, gpu_args = prepare_args(4096, 1024, 128)
+class2_4 = class_layer(4096, 1024, 128)
+#Latency: 18.12ms
+test_gpu(schedule_gpu2_4(class2_4), gpu_args)
