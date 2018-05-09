@@ -143,7 +143,6 @@ def schedule_conv1_2(triple):
     thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
 
     b, y, x, n = sch[neuron_n].op.axis
-    print(sch[neuron_n].op.axis)
     ky, kx, i = sch[neuron_n].op.reduce_axis
     yo, yi = sch[neuron_n].split(y, nparts = 32)
     xo, xi = sch[neuron_n].split(x, nparts = 32)
@@ -181,7 +180,6 @@ def schedule_conv1_8(triple):
     thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
 
     b, y, x, n = sch[neuron_n].op.axis
-    print(sch[neuron_n].op.axis)
     ky, kx, i = sch[neuron_n].op.reduce_axis
     yo, yi = sch[neuron_n].split(y, nparts = 32)
     xo, xi = sch[neuron_n].split(x, nparts = 32)
@@ -219,7 +217,6 @@ def schedule_conv1_16(triple):
     thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
 
     b, y, x, n = sch[neuron_n].op.axis
-    print(sch[neuron_n].op.axis)
     ky, kx, i = sch[neuron_n].op.reduce_axis
     yo, yi = sch[neuron_n].split(y, nparts = 32)
     xo, xi = sch[neuron_n].split(x, nparts = 32)
@@ -243,7 +240,7 @@ def schedule_conv1_16(triple):
 #conv1_16  = conv_layer(224, 224, 16, 64, 64, 3, 3, False)
 #test_gpu(schedule_conv1_16(conv1_16), gpu_args)
 
-def schedule_conv2(triple):
+def schedule_conv2_1(triple):
     neuron_i, synapse, neuron_n = triple
 
     block_x = tvm.thread_axis("blockIdx.x")
@@ -255,13 +252,15 @@ def schedule_conv2(triple):
 
     sch = tvm.create_schedule(neuron_n.op)
 
+    print(sch[neuron_n].op.axis)
     y, x, n, b = sch[neuron_n].op.axis
     ky, kx, i = sch[neuron_n].op.reduce_axis
-    yx = sch[neuron_n].fuse(y, x)
+    #yx = sch[neuron_n].fuse(y, x)
     no, ni = sch[neuron_n].split(n, nparts = 32)
-    sch[neuron_n].reorder(yx, no, ni, ky, kx, i, b)
-    sch[neuron_n].bind(yx, block_y)
-    sch[neuron_n].bind(no, block_x)
+    sch[neuron_n].reorder(y, x, no, ni, ky, kx, i, b)
+    sch[neuron_n].bind(y, block_y)
+    sch[neuron_n].bind(x, block_x)
+    sch[neuron_n].bind(no, thread_y)
     sch[neuron_n].bind(ni, thread_x)
 
     print(tvm.lower(sch, triple, simple_mode = True))
@@ -270,10 +269,113 @@ def schedule_conv2(triple):
     print('GPU Compilation Done...')
     return func
 
+#Latency: 29.01ms
+#cpu_args, gpu_args = prepare_args(14, 14, 1, 512, 512, 3, 3)
+#conv2_1  = conv_layer(14, 14, 1, 512, 512, 3, 3)
+#test_gpu(schedule_conv2_1(conv2_1), gpu_args)
 
-#conv2_1  = conv_layer(14, 14, 512, 512, 3, 3, 1)
-#conv2_2  = conv_layer(14, 14, 512, 512, 3, 3, 2)
-#conv2_8  = conv_layer(14, 14, 512, 512, 3, 3, 8)
-#conv2_16 = conv_layer(14, 14, 512, 512, 3, 3, 16)
 
+def schedule_conv2_2(triple):
+    neuron_i, synapse, neuron_n = triple
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    sch = tvm.create_schedule(neuron_n.op)
+
+    b, y, x, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    ky, kx, i = sch[neuron_n].op.reduce_axis
+    #yx = sch[neuron_n].fuse(y, x)
+    no, ni = sch[neuron_n].split(n, nparts = 32)
+    sch[neuron_n].reorder(y, x, no, ni, b, ky, kx, i)
+    nib = sch[neuron_n].fuse(ni, b)
+    sch[neuron_n].bind(y, block_y)
+    sch[neuron_n].bind(x, block_x)
+    sch[neuron_n].bind(no, thread_y)
+    sch[neuron_n].bind(nib, thread_x)
+
+    print(tvm.lower(sch, triple, simple_mode = True))
+    func = tvm.build(sch, triple, target = 'cuda')
+    assert func
+    print('GPU Compilation Done...')
+    return func
+
+#Latency: 27.06
+#cpu_args, gpu_args = prepare_args(14, 14, 2, 512, 512, 3, 3, False)
+#conv2_2  = conv_layer(14, 14, 2, 512, 512, 3, 3, False)
+#test_gpu(schedule_conv2_2(conv2_2), gpu_args)
+
+def schedule_conv2_8(triple):
+    neuron_i, synapse, neuron_n = triple
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    sch = tvm.create_schedule(neuron_n.op)
+
+    b, y, x, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    ky, kx, i = sch[neuron_n].op.reduce_axis
+    yx = sch[neuron_n].fuse(y, x)
+    no, ni = sch[neuron_n].split(n, nparts = 32)
+    sch[neuron_n].reorder(yx, no, b, ni, ky, kx, i)
+    sch[neuron_n].bind(yx, block_y)
+    sch[neuron_n].bind(no, block_x)
+    sch[neuron_n].bind(b, thread_y)
+    sch[neuron_n].bind(ni, thread_x)
+
+    print(tvm.lower(sch, triple, simple_mode = True))
+    func = tvm.build(sch, triple, target = 'cuda')
+    assert func
+    print('GPU Compilation Done...')
+    return func
+
+#Latency: 102.68 ms
+#cpu_args, gpu_args = prepare_args(14, 14, 8, 512, 512, 3, 3, False)
+#conv2_8  = conv_layer(14, 14, 8, 512, 512, 3, 3, False)
+#test_gpu(schedule_conv2_8(conv2_8), gpu_args)
+
+def schedule_conv2_16(triple):
+    neuron_i, synapse, neuron_n = triple
+
+    block_x = tvm.thread_axis("blockIdx.x")
+    block_y = tvm.thread_axis("blockIdx.y")
+    block_z = tvm.thread_axis("blockIdx.z")
+    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
+    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
+    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
+
+    sch = tvm.create_schedule(neuron_n.op)
+
+    b, y, x, n = sch[neuron_n].op.axis
+    print(sch[neuron_n].op.axis)
+    ky, kx, i = sch[neuron_n].op.reduce_axis
+    #yx = sch[neuron_n].fuse(y, x)
+    no, ni = sch[neuron_n].split(n, nparts = 32)
+    sch[neuron_n].reorder(y, x, no, b, ni, ky, kx, i)
+    sch[neuron_n].bind(y, block_z)
+    sch[neuron_n].bind(x, block_y)
+    sch[neuron_n].bind(no, block_x)
+    sch[neuron_n].bind(b, thread_y)
+    sch[neuron_n].bind(ni, thread_x)
+
+    print(tvm.lower(sch, triple, simple_mode = True))
+    func = tvm.build(sch, triple, target = 'cuda')
+    assert func
+    print('GPU Compilation Done...')
+    return func
+
+#Latency: 188.48 ms
+cpu_args, gpu_args = prepare_args(14, 14, 16, 512, 512, 3, 3, False)
+conv2_16 = conv_layer(14, 14, 16, 512, 512, 3, 3, False)
+test_gpu(schedule_conv2_16(conv2_16), gpu_args)
 
