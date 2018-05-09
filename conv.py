@@ -109,7 +109,20 @@ def schedule_conv1_1(triple):
     yo, yi = sch[neuron_n].split(y, nparts = 16)
     xo, xi = sch[neuron_n].split(x, nparts = 16)
     no, ni = sch[neuron_n].split(n, nparts = 16)
-    sch[neuron_n].reorder(yo, xo, no, yi, xi, ni, ky, kx, i)
+    io, ii = sch[neuron_n].split(i, 4)
+    sch[neuron_n].reorder(yo, xo, no, yi, xi, ni, ky, kx, io, ii)
+
+    #sch[shared_synaps].compute_at(sch[neuron_n], no)
+    #ax0, ax1, ax2, ax3 = sch[shared_synaps].op.axis
+    #ax3o, ax3i = sch[shared_synaps].split(ax3, 4)
+    #sch[shared_synaps].vectorize(ax3i)
+
+    #sch[local_synaps].compute_at(sch[neuron_n], io)
+    #ax0, ax1, ax2, ax3 = sch[local_synaps].op.axis
+    #sch[local_synaps].vectorize(ax3)
+
+    sch[neuron_n].vectorize(ii)
+
     sch[neuron_n].bind(yo, block_z)
     sch[neuron_n].bind(xo, block_y)
     sch[neuron_n].bind(no, block_x)
@@ -126,7 +139,7 @@ def schedule_conv1_1(triple):
 #cpu_args, gpu_args = prepare_args(224, 224, 1, 64, 64, 3, 3)
 #Latency: 987.99ms
 #test_cpu(schedule_cpu(conv1_1), cpu_args)
-#Latency: 37.96 ms
+#Latency: 10.02 ms
 #conv1_1  = conv_layer(224, 224, 1, 64, 64, 3, 3)
 #test_gpu(schedule_conv1_1(conv1_1), gpu_args)
 
@@ -147,7 +160,9 @@ def schedule_conv1_2(triple):
     yo, yi = sch[neuron_n].split(y, nparts = 32)
     xo, xi = sch[neuron_n].split(x, nparts = 32)
     no, ni = sch[neuron_n].split(n, nparts = 16)
-    sch[neuron_n].reorder(yo, xo, no, yi, xi, ni, b, ky, kx, i)
+    io, ii = sch[neuron_n].split(i, 4)
+    sch[neuron_n].reorder(yo, xo, no, yi, xi, ni, b, ky, kx, io, ii)
+    sch[neuron_n].vectorize(ii)
     nib = sch[neuron_n].fuse(ni, b)
     sch[neuron_n].bind(yo, block_z)
     sch[neuron_n].bind(xo, block_y)
@@ -162,7 +177,7 @@ def schedule_conv1_2(triple):
     print('GPU Compilation Done...')
     return func
 
-#51.56ms
+#13.34ms
 #cpu_args, gpu_args = prepare_args(224, 224, 2, 64, 64, 3, 3, False)
 #conv1_2  = conv_layer(224, 224, 2, 64, 64, 3, 3, False)
 #test_gpu(schedule_conv1_2(conv1_2), gpu_args)
@@ -184,7 +199,9 @@ def schedule_conv1_8(triple):
     yo, yi = sch[neuron_n].split(y, nparts = 32)
     xo, xi = sch[neuron_n].split(x, nparts = 32)
     no, ni = sch[neuron_n].split(n, nparts = 32)
-    sch[neuron_n].reorder(yo, xo, no, yi, xi, b, ni, ky, kx, i)
+    io, ii = sch[neuron_n].split(i, 4)
+    sch[neuron_n].reorder(yo, xo, no, yi, xi, b, ni, ky, kx, io, ii)
+    sch[neuron_n].vectorize(ii)
     sch[neuron_n].bind(yo, block_z)
     sch[neuron_n].bind(xo, block_y)
     sch[neuron_n].bind(no, block_x)
@@ -199,7 +216,7 @@ def schedule_conv1_8(triple):
     print('GPU Compilation Done...')
     return func
 
-#128.22 ms
+#37.23 ms
 #cpu_args, gpu_args = prepare_args(224, 224, 8, 64, 64, 3, 3, False)
 #conv1_8  = conv_layer(224, 224, 8, 64, 64, 3, 3, False)
 #test_gpu(schedule_conv1_8(conv1_8), gpu_args)
@@ -221,7 +238,9 @@ def schedule_conv1_16(triple):
     yo, yi = sch[neuron_n].split(y, nparts = 32)
     xo, xi = sch[neuron_n].split(x, nparts = 32)
     no, ni = sch[neuron_n].split(n, nparts = 32)
-    sch[neuron_n].reorder(yo, xo, no, yi, xi, b, ni, ky, kx, i)
+    io, ii = sch[neuron_n].split(i, 4)
+    sch[neuron_n].reorder(yo, xo, no, yi, xi, b, ni, ky, kx, io, ii)
+    sch[neuron_n].vectorize(ii)
     sch[neuron_n].bind(yo, block_z)
     sch[neuron_n].bind(xo, block_y)
     sch[neuron_n].bind(no, block_x)
@@ -235,7 +254,7 @@ def schedule_conv1_16(triple):
     print('GPU Compilation Done...')
     return func
 
-#199.49ms
+#58.87 ms
 #cpu_args, gpu_args = prepare_args(224, 224, 16, 64, 64, 3, 3, False)
 #conv1_16  = conv_layer(224, 224, 16, 64, 64, 3, 3, False)
 #test_gpu(schedule_conv1_16(conv1_16), gpu_args)
@@ -255,9 +274,10 @@ def schedule_conv2_1(triple):
     print(sch[neuron_n].op.axis)
     y, x, n, b = sch[neuron_n].op.axis
     ky, kx, i = sch[neuron_n].op.reduce_axis
-    #yx = sch[neuron_n].fuse(y, x)
     no, ni = sch[neuron_n].split(n, nparts = 32)
-    sch[neuron_n].reorder(y, x, no, ni, ky, kx, i, b)
+    io, ii = sch[neuron_n].split(i, 4)
+    sch[neuron_n].reorder(y, x, no, ni, ky, kx, io, ii, b)
+    sch[neuron_n].vectorize(ii)
     sch[neuron_n].bind(y, block_y)
     sch[neuron_n].bind(x, block_x)
     sch[neuron_n].bind(no, thread_y)
@@ -269,7 +289,7 @@ def schedule_conv2_1(triple):
     print('GPU Compilation Done...')
     return func
 
-#Latency: 29.01ms
+#Latency: 8.77 ms
 #cpu_args, gpu_args = prepare_args(14, 14, 1, 512, 512, 3, 3)
 #conv2_1  = conv_layer(14, 14, 1, 512, 512, 3, 3)
 #test_gpu(schedule_conv2_1(conv2_1), gpu_args)
@@ -292,7 +312,9 @@ def schedule_conv2_2(triple):
     ky, kx, i = sch[neuron_n].op.reduce_axis
     #yx = sch[neuron_n].fuse(y, x)
     no, ni = sch[neuron_n].split(n, nparts = 32)
-    sch[neuron_n].reorder(y, x, no, ni, b, ky, kx, i)
+    io, ii = sch[neuron_n].split(i, 4)
+    sch[neuron_n].reorder(y, x, no, ni, b, ky, kx, io, ii)
+    sch[neuron_n].vectorize(ii)
     nib = sch[neuron_n].fuse(ni, b)
     sch[neuron_n].bind(y, block_y)
     sch[neuron_n].bind(x, block_x)
@@ -305,7 +327,7 @@ def schedule_conv2_2(triple):
     print('GPU Compilation Done...')
     return func
 
-#Latency: 27.06
+#Latency: 10.32 ms
 #cpu_args, gpu_args = prepare_args(14, 14, 2, 512, 512, 3, 3, False)
 #conv2_2  = conv_layer(14, 14, 2, 512, 512, 3, 3, False)
 #test_gpu(schedule_conv2_2(conv2_2), gpu_args)
@@ -326,8 +348,10 @@ def schedule_conv2_8(triple):
     print(sch[neuron_n].op.axis)
     ky, kx, i = sch[neuron_n].op.reduce_axis
     yx = sch[neuron_n].fuse(y, x)
-    no, ni = sch[neuron_n].split(n, nparts = 32)
-    sch[neuron_n].reorder(yx, no, b, ni, ky, kx, i)
+    no, ni = sch[neuron_n].split(n, nparts = 64)
+    io, ii = sch[neuron_n].split(i, 4)
+    sch[neuron_n].reorder(yx, no, b, ni, ky, kx, io, ii)
+    sch[neuron_n].vectorize(ii)
     sch[neuron_n].bind(yx, block_y)
     sch[neuron_n].bind(no, block_x)
     sch[neuron_n].bind(b, thread_y)
@@ -339,7 +363,7 @@ def schedule_conv2_8(triple):
     print('GPU Compilation Done...')
     return func
 
-#Latency: 102.68 ms
+#Latency: 27.96 ms
 #cpu_args, gpu_args = prepare_args(14, 14, 8, 512, 512, 3, 3, False)
 #conv2_8  = conv_layer(14, 14, 8, 512, 512, 3, 3, False)
 #test_gpu(schedule_conv2_8(conv2_8), gpu_args)
@@ -360,8 +384,10 @@ def schedule_conv2_16(triple):
     print(sch[neuron_n].op.axis)
     ky, kx, i = sch[neuron_n].op.reduce_axis
     #yx = sch[neuron_n].fuse(y, x)
-    no, ni = sch[neuron_n].split(n, nparts = 32)
-    sch[neuron_n].reorder(y, x, no, b, ni, ky, kx, i)
+    no, ni = sch[neuron_n].split(n, nparts = 128)
+    io, ii = sch[neuron_n].split(i, 4)
+    sch[neuron_n].reorder(y, x, no, b, ni, ky, kx, io, ii)
+    sch[neuron_n].vectorize(ii)
     sch[neuron_n].bind(y, block_z)
     sch[neuron_n].bind(x, block_y)
     sch[neuron_n].bind(no, block_x)
@@ -374,7 +400,7 @@ def schedule_conv2_16(triple):
     print('GPU Compilation Done...')
     return func
 
-#Latency: 188.48 ms
+#Latency: 34.43 ms
 cpu_args, gpu_args = prepare_args(14, 14, 16, 512, 512, 3, 3, False)
 conv2_16 = conv_layer(14, 14, 16, 512, 512, 3, 3, False)
 test_gpu(schedule_conv2_16(conv2_16), gpu_args)
