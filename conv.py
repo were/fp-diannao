@@ -401,7 +401,7 @@ def schedule_conv2_16(triple):
     return func
 
 #Latency: 34.43 ms
-cpu_args, gpu_args = prepare_args(14, 14, 16, 512, 512, 3, 3, False)
-conv2_16 = conv_layer(14, 14, 16, 512, 512, 3, 3, False)
-test_gpu(schedule_conv2_16(conv2_16), gpu_args)
-
+#cpu_args, gpu_args = prepare_args(14, 14, 16, 512, 512, 3, 3, False)
+#conv2_16 = conv_layer(14, 14, 16, 512, 512, 3, 3, False)
+#test_gpu(schedule_conv2_16(conv2_16), gpu_args)
+#

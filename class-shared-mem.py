@@ -73,7 +73,7 @@ def test_gpu(func, gpu_args):
     evaluator = func.time_evaluator(func.entry_name, tvm.gpu(0), number = 5)
     print('GPU Convolution: %.2f ms' % (evaluator(*gpu_args).mean * 1000))
 
-
+#Too small to benefit!
 def schedule_gpu1_1(four):
     neuron_i, synapse, temp, neuron_n = four
     sch = tvm.create_schedule(neuron_n.op)
@@ -92,10 +92,44 @@ def schedule_gpu1_1(four):
     thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
     thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
 
+
+
     ro, ri = sch[temp].split(temp.op.reduce_axis[0], 4)
-    roo, roi = sch[temp].split(ro, 4)
     sch[temp].vectorize(ri)
-    sch[temp].unroll(roi)
+
+
+    #local_neuron  = sch.cache_read(shared_neuron, 'local', [neuron_n])
+    #local_synaps  = sch.cache_read(shared_synaps, 'local', [neuron_n])
+    #local_output  = sch.cache_write(neuron_n, 'local')
+
+    #shared_synaps = sch.cache_read(synapse, 'shared', [temp])
+    #sch[shared_synaps].compute_at(sch[temp], ro)
+    #ax0, ax1 = shared_synaps.op.axis
+    #sch[shared_synaps].vectorize(ax1)
+    #ax0o, ax0i = sch[shared_synaps].split(ax0, 32)
+    #sch[shared_synaps].bind(ax0o, thread_y)
+    #sch[shared_synaps].bind(ax0i, thread_x)
+
+    shared_neuron = sch.cache_read(neuron_i, 'shared', [temp])
+    sch[shared_neuron].compute_at(sch[neuron_n], nii)
+    ax0, ax1 = shared_neuron.op.axis
+    ax0o, ax0i = sch[shared_neuron].split(ax0, 8)
+    ax0io, ax0ii = sch[shared_neuron].split(ax0i, 4)
+    sch[shared_neuron].unroll(ax0io)
+    sch[shared_neuron].vectorize(ax0ii)
+    ax0oo, ax0oi = sch[shared_neuron].split(ax0o, 32)
+    sch[shared_neuron].bind(ax0oo, thread_y)
+    sch[shared_neuron].bind(ax0oi, thread_x)
+
+    local_neuron = sch.cache_read(shared_neuron, 'local', [temp])
+    sch[local_neuron].compute_at(sch[temp], ro)
+    ax0, ax1 = local_neuron.op.axis
+    sch[local_neuron].vectorize(ax0)
+    #ax0, ax1 = shared_synaps.op.axis
+    #sch[shared_synaps].vectorize(ax1)
+    #ax0o, ax0i = sch[shared_synaps].split(ax0, 32)
+    #sch[shared_synaps].bind(ax0o, thread_y)
+    #sch[shared_synaps].bind(ax0i, thread_x)
 
     sch[neuron_n].bind(noo, block_y)
     sch[neuron_n].bind(noi, block_x)
@@ -143,11 +177,26 @@ def schedule_gpu1_16(four):
     sch[neuron_n].bind(nii, thread_x)
 
     ro, ri = sch[temp].split(temp.op.reduce_axis[0], 4)
-    roo, roi = sch[temp].split(ro, 4)
     sch[temp].vectorize(ri)
-    sch[temp].unroll(roi)
     #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
-    
+
+    shared_neuron = sch.cache_read(neuron_i, 'shared', [temp])
+    sch[shared_neuron].compute_at(sch[neuron_n], nii)
+    ax0, ax1 = shared_neuron.op.axis
+    ax0o, ax0i = sch[shared_neuron].split(ax0, 8)
+    ax0io, ax0ii = sch[shared_neuron].split(ax0i, 4)
+    sch[shared_neuron].unroll(ax0io)
+    sch[shared_neuron].vectorize(ax0ii)
+    ax0oo, ax0oi = sch[shared_neuron].split(ax0o, 32)
+    sch[shared_neuron].bind(ax0oi, block_y)
+    sch[shared_neuron].bind(ax0oo, block_x)
+
+    local_neuron = sch.cache_read(shared_neuron, 'local', [temp])
+    sch[local_neuron].compute_at(sch[temp], ro)
+    ax0, ax1 = local_neuron.op.axis
+    sch[local_neuron].vectorize(ax0)
+
+
     print(tvm.lower(sch, four, simple_mode = True))
     func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
     assert func
@@ -155,9 +204,10 @@ def schedule_gpu1_16(four):
 
     return func
 
+#Good!
 #cpu_args, gpu_args = prepare_args(25088, 4096, 16)
 #class1_16 = class_layer(25088, 4096, 16)
-#Latency: 29.79 ms
+#Latency: 24.34 ms
 #test_gpu(schedule_gpu1_16(class1_16), gpu_args)
 
 def schedule_gpu1_32(four):
@@ -187,11 +237,26 @@ def schedule_gpu1_32(four):
     sch[neuron_n].bind(nii, thread_x)
 
     ro, ri = sch[temp].split(temp.op.reduce_axis[0], 4)
-    roo, roi = sch[temp].split(ro, 4)
     sch[temp].vectorize(ri)
-    sch[temp].unroll(roi)
     #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
     
+    shared_neuron = sch.cache_read(neuron_i, 'shared', [temp])
+    sch[shared_neuron].compute_at(sch[neuron_n], nii)
+    ax0, ax1 = shared_neuron.op.axis
+    ax0o, ax0i = sch[shared_neuron].split(ax0, 8)
+    ax0io, ax0ii = sch[shared_neuron].split(ax0i, 4)
+    sch[shared_neuron].unroll(ax1)
+    sch[shared_neuron].unroll(ax0io)
+    sch[shared_neuron].vectorize(ax0ii)
+    ax0oo, ax0oi = sch[shared_neuron].split(ax0o, 32)
+    sch[shared_neuron].bind(ax0oi, thread_x)
+    sch[shared_neuron].bind(ax0oo, block_x)
+
+    local_neuron = sch.cache_read(shared_neuron, 'local', [temp])
+    sch[local_neuron].compute_at(sch[temp], ro)
+    ax0, ax1 = local_neuron.op.axis
+    sch[local_neuron].vectorize(ax0)
+
     print(tvm.lower(sch, four, simple_mode = True))
     func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
     assert func
@@ -199,9 +264,10 @@ def schedule_gpu1_32(four):
 
     return func
 
+#Not very suitable...
 #cpu_args, gpu_args = prepare_args(25088, 4096, 32)
 #class1_32 = class_layer(25088, 4096, 32)
-#Latency: 96.48 ms
+##Latency: 96.48 ms
 #test_gpu(schedule_gpu1_32(class1_32), gpu_args)
 
 def schedule_gpu2_1(four):
@@ -292,11 +358,11 @@ def schedule_gpu2_4(four):
     
     b, n = sch[neuron_n].op.axis
     print(sch[neuron_n].op.axis)
-    bo, bi = sch[neuron_n].split(b, nparts = 16)
+    bo, bi = sch[neuron_n].split(b, nparts = 32)
     no, ni = sch[neuron_n].split(n, nparts = 64)
-    #noo, noi = sch[neuron_n].split(no, nparts = 8)
-    #nio, nii = sch[neuron_n].split(ni, nparts = 8)
-    sch[temp].compute_at(sch[neuron_n], ni)
+    noo, noi = sch[neuron_n].split(no, nparts = 8)
+    nio, nii = sch[neuron_n].split(ni, nparts = 8)
+    sch[temp].compute_at(sch[neuron_n], nii)
 
     ro, ri = sch[temp].split(temp.op.reduce_axis[0], 4)
     sch[temp].vectorize(ri)
@@ -308,42 +374,26 @@ def schedule_gpu2_4(four):
     thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
     thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
 
-    #shared_neuron = sch.cache_read(neuron_i, 'shared', [temp])
-    #sch[shared_neuron].compute_at(sch[neuron_n], nii)
-    #ax0, ax1 = shared_neuron.op.axis
-    #ax0o, ax0i = sch[shared_neuron].split(ax0, 8)
-    #ax0io, ax0ii = sch[shared_neuron].split(ax0i, 4)
-    #sch[shared_neuron].unroll(ax1)
-    #sch[shared_neuron].unroll(ax0io)
-    #sch[shared_neuron].vectorize(ax0ii)
-    #ax0oo, ax0oi = sch[shared_neuron].split(ax0o, 32)
-    #sch[shared_neuron].bind(ax0oi, thread_x)
-    #sch[shared_neuron].bind(ax0oo, block_x)
+    shared_neuron = sch.cache_read(neuron_i, 'shared', [temp])
+    sch[shared_neuron].compute_at(sch[neuron_n], nio)
+    ax0, ax1 = shared_neuron.op.axis
+    ax0o, ax0i = sch[shared_neuron].split(ax0, 4)
+    sch[shared_neuron].vectorize(ax0i)
+    ax1o, ax1i = sch[shared_neuron].split(ax0o, 8)
+    sch[shared_neuron].bind(ax1o, block_y)
+    sch[shared_neuron].bind(ax1i, block_x)
 
-    #local_neuron = sch.cache_read(shared_neuron, 'local', [temp])
-    #sch[local_neuron].compute_at(sch[temp], ro)
-    #ax0, ax1 = local_neuron.op.axis
-    #sch[local_neuron].vectorize(ax0)
+    local_neuron = sch.cache_read(shared_neuron, 'local', [temp])
+    sch[local_neuron].compute_at(sch[temp], ro)
+    ax0, ax1 = local_neuron.op.axis
+    sch[local_neuron].vectorize(ax0)
 
-    #sch[neuron_n].bind(noo, block_y)
-    #sch[neuron_n].bind(noi, block_x)
-    #sch[neuron_n].bind(nio, thread_y)
-    #sch[neuron_n].bind(nii, thread_x)
+    sch[neuron_n].bind(bo, block_y)
+    sch[neuron_n].bind(bi, block_z)
+    sch[neuron_n].bind(noo, block_x)
+    sch[neuron_n].bind(noi, thread_y)
+    sch[neuron_n].bind(nio, thread_x)
 
-    sch[neuron_n].bind(no, block_y)
-    sch[neuron_n].bind(ni, block_z)
-    sch[neuron_n].bind(bo, thread_y)
-    sch[neuron_n].bind(bi, thread_x)
-
-    block_x = tvm.thread_axis("blockIdx.x")
-    block_y = tvm.thread_axis("blockIdx.y")
-    block_z = tvm.thread_axis("blockIdx.z")
-    thread_x = tvm.thread_axis((0, 8), "threadIdx.x")
-    thread_y = tvm.thread_axis((0, 8), "threadIdx.y")
-    thread_z = tvm.thread_axis((0, 8), "threadIdx.z")
-
-    #sch[neuron_n].reorder(y, x, ky, kx, i, n, b)
-    
     print(tvm.lower(sch, four, simple_mode = True))
     func = tvm.build(sch, [neuron_i, synapse, neuron_n], target = 'cuda')
     assert func
@@ -351,7 +401,22 @@ def schedule_gpu2_4(four):
 
     return func
 
+#cpu_args, gpu_args = prepare_args(4096, 1024, 16)
+#class2_4 = class_layer(4096, 1024, 16)
+#Latency: 0.36 ms
+#test_gpu(schedule_gpu2_4(class2_4), gpu_args)
+
+#cpu_args, gpu_args = prepare_args(4096, 1024, 32)
+#class2_4 = class_layer(4096, 1024, 32)
+#Latency: 0.4 ms
+#test_gpu(schedule_gpu2_4(class2_4), gpu_args)
+
+#cpu_args, gpu_args = prepare_args(4096, 1024, 64)
+#class2_4 = class_layer(4096, 1024, 64)
+#Latency: 0.64 ms
+#test_gpu(schedule_gpu2_4(class2_4), gpu_args)
+
 cpu_args, gpu_args = prepare_args(4096, 1024, 512)
 class2_4 = class_layer(4096, 1024, 512)
-##Latency: 4.8 ms
+#Latency: 4.8 ms
 test_gpu(schedule_gpu2_4(class2_4), gpu_args)
