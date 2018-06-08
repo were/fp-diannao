@@ -14,6 +14,15 @@ def conv_layer(Nx, Ny, batch, Ni, Nn, Kx, Ky, batch_inner = True):
     kx = tvm.reduce_axis((0, Kx), name='kx')
     i = tvm.reduce_axis((0, Ni), name='i')
 
+    neuron_n = tvm.compute(
+        (batch, Ny, Nx, Nn),
+        lambda b, y, x, n:
+            tvm.sum(synapse[ky][kx][n][i] * neuron_i[y + ky][x + kx][i][b],
+        axis=[ky, kx, i]),
+        name='neuron_n'
+    )
+
+
     if batch_inner:
         neuron_n = tvm.compute(
             (Ny, Nx, Nn, batch),
@@ -162,14 +171,9 @@ def schedule_conv2_16(triple):
 
     sch = tvm.create_schedule(neuron_n.op)
 
-    #shared_neuron = sch.cache_read(neuron_i, 'shared', [neuron_n])
-    #local_neuron  = sch.cache_read(shared_neuron, 'local', [neuron_n])
     shared_synaps = sch.cache_read(synapse, 'shared', [neuron_n])
-    #local_synaps  = sch.cache_read(shared_synaps, 'local', [neuron_n])
-    #local_output  = sch.cache_write(neuron_n, 'local')
 
     b, y, x, n = sch[neuron_n].op.axis
-    #print(sch[neuron_n].op.axis)
     ky, kx, i = sch[neuron_n].op.reduce_axis
     yx = sch[neuron_n].fuse(y, x)
     yxo, yxi = sch[neuron_n].split(yx, nparts = 4)
@@ -177,23 +181,20 @@ def schedule_conv2_16(triple):
     io, ii = sch[neuron_n].split(i, 4)
     ioo, ioi = sch[neuron_n].split(io, 4)
     sch[neuron_n].reorder(yxo, yxi, no, b, ni, ky, kx, ioo, ioi, ii)
-    #sch[neuron_n].reorder(yxo, yxi, no, b, ni, ky, kx, io, ii)
 
     sch[shared_synaps].compute_at(sch[neuron_n], kx)
     ax0, ax1, ax2, ax3 = shared_synaps.op.axis
     ax3o, ax3i = sch[shared_synaps].split(ax3, 4)
     sch[shared_synaps].vectorize(ax3i)
     sch[shared_synaps].bind(ax3o, block_x)
-    #sch[shared_synaps].bind(ax2, block_z)
-
 
     sch[neuron_n].vectorize(ii)
 
-    sch[neuron_n].bind(yxo, block_z)
-    sch[neuron_n].bind(yxi, block_y)
-    sch[neuron_n].bind(no, block_x)
-    sch[neuron_n].bind(b, thread_y)
-    sch[neuron_n].bind(ni, thread_x)
+    #sch[neuron_n].bind(yxo, block_z)
+    #sch[neuron_n].bind(yxi, block_y)
+    #sch[neuron_n].bind(no, block_x)
+    #sch[neuron_n].bind(b, thread_y)
+    #sch[neuron_n].bind(ni, thread_x)
 
     print(tvm.lower(sch, triple, simple_mode = True))
     func = tvm.build(sch, triple, target = 'cuda')
@@ -202,7 +203,7 @@ def schedule_conv2_16(triple):
     return func
 
 #Latency: 14.52 ms
-#cpu_args, gpu_args = prepare_args(14, 14, 16, 512, 512, 3, 3, False)
-#conv2_16 = conv_layer(14, 14, 16, 512, 512, 3, 3, False)
-#test_gpu(schedule_conv2_16(conv2_16), gpu_args)
+cpu_args, gpu_args = prepare_args(14, 14, 16, 512, 512, 3, 3, False)
+conv2_16 = conv_layer(14, 14, 16, 512, 512, 3, 3, False)
+test_gpu(schedule_conv2_16(conv2_16), gpu_args)
 
