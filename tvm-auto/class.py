@@ -22,20 +22,19 @@ def dense(n, m, l):
 
 #dense(25088, 4096, 32)
 
-logging.basicConfig(level=logging.INFO, filename='rnd-class-1.log')
+logging.basicConfig(level=logging.INFO, filename='sa-class-1.log')
 #logging.basicConfig(level=logging.INFO)
 
-#tsk = autotvm.task.Task(conv, [226, 226, 3, 3, 64, 64, 1, 'float32'], {})
 tsk = autotvm.task.Task(dense, [25088, 4096, 1], {})
 tgt = tvm.target.create('cuda -model=p4000')
 tsk.init_space(tgt, None)
 
 print(tsk.config_space)
 
-tuner = autotvm.tuner.RandomTuner(tsk)
+#tuner = autotvm.tuner.RandomTuner(tsk)
 #tuner = autotvm.tuner.GATuner(tsk, pop_size=128, elite_num=4)
 #tuner = autotvm.tuner.XGBTuner(tsk, tgt, 16, 4)
-#tuner = SATuner(tsk, 128, 960)
+tuner = SATuner(tsk, 128, 1024)
 
 tuner.add_callback(autotvm.callback.SingleBestRecorder())
 

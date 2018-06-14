@@ -52,7 +52,7 @@ class SATuner(Tuner):
         return res
 
     def has_next(self):
-        return len(self.visited) - (self.pool_size - self.cur) < self.total
+        return len(self.visited) - (self.pool_size - self.cur) < self.total and self.T > 1.0
 
     def update(self, inputs, results):
         n = len(inputs)
