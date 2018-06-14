@@ -62,11 +62,12 @@ def schedule_cpu(triple):
     y, x, n, b = sch[neuron_n].op.axis
     ky, kx, i = sch[neuron_n].op.reduce_axis
     no, ni = sch[neuron_n].split(n, 8)
-    io, ii = sch[neuron_n].split(i, 8)
+    #io, ii = sch[neuron_n].split(i, 8)
     yo, yi = sch[neuron_n].split(y, 14)
     xo, xi = sch[neuron_n].split(x, 8)
     sch[neuron_n].vectorize(ni)
-    sch[neuron_n].reorder(yo, xo, yi, ky, kx, xi, io, ii, no, ni)
+    #sch[neuron_n].reorder(yo, xo, yi, ky, kx, xi, io, ii, no, ni)
+    sch[neuron_n].reorder(yo, xo, yi, ky, kx, xi, i, no, ni)
     #yxo = sch[neuron_n].fuse(yo, xo)
     #sch[neuron_n].parallel(yo)
 
