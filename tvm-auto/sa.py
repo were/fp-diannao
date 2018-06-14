@@ -18,9 +18,9 @@ class SATuner(Tuner):
         self.dims = [len(i) for i in vals] + [1]
         self.n_dims = len(vals)
         if T is None:
-            self.T = np.sqrt(sum(i * i for i in self.dims)) / pool
+            self.originT = self.T = np.sqrt(sum(i * i for i in self.dims)) / pool
         else:
-            self.T = T
+            self.originT = self.T = T
         self.N = reduce(int.__mul__, self.dims)
 
         self.visited = set([])
@@ -57,9 +57,10 @@ class SATuner(Tuner):
     def update(self, inputs, results):
         n = len(inputs)
         assert n == len(results)
-        for i in range(n):
-            inp = inputs[i]
-            res = results[i]
+        for i in range(self.cur - n, self.cur):
+            _i = i - self.cur + n
+            inp = inputs[_i]
+            res = results[_i]
             sol, old_score = self.pool[i]
             if res.error_no == 0:
                 new_score = inp.task.flop / np.mean(res.runs) / 2.5e12
@@ -69,8 +70,8 @@ class SATuner(Tuner):
                 logging.log(logging.INFO, '%f is better than %f' % (new_score, old_score))
                 self.pool[i] = (self.exec_pool[i], new_score)
                 self.better = True
-            elif random.random() < np.exp(-(old_score - new_score) / self.T):
-                per = np.exp(-(old_score - new_score) / self.T)
+            elif random.random() < np.exp(-(old_score - new_score) * self.originT / self.T):
+                per = np.exp(-(old_score - new_score) * self.originT / self.T)
                 logging.log(logging.INFO, '%.2f%% accept a bad score %f (%f)' % (per * 100.0, new_score, old_score))
                 self.pool[i] = (self.exec_pool[i], new_score)
 

@@ -2,6 +2,7 @@
 
 import topi, tvm, autotvm, time, numpy, logging
 from autotvm import MeasureResult, MeasureErrorNo
+from sa import SATuner
 
 def conv(iw, ih, fw, fh, fi, fo, batch, dtype):
     img = tvm.placeholder((batch, fi, iw, ih), dtype=dtype, name='img')
@@ -77,10 +78,11 @@ logging.basicConfig(level=logging.INFO, filename='random.log')
 tsk = autotvm.task.Task(conv, [226, 226, 3, 3, 64, 64, 1, 'float32'], {})
 tgt = tvm.target.create('llvm')
 tsk.init_space(tgt, None)
-#print(tsk.config_space)
+print(tsk.config_space)
 
 #tuner = autotvm.tuner.GridSearchTuner(tsk)
-tuner = autotvm.tuner.RandomTuner(tsk)
+#tuner = autotvm.tuner.RandomTuner(tsk)
+tuner = SATuner(tsk, 16, 800)
 
 tuner.add_callback(autotvm.callback.SingleBestRecorder())
 

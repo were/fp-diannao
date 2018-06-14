@@ -41,22 +41,23 @@ def conv(iw, ih, fw, fh, fi, fo, batch, dtype):
 
     return sch, [img, fil, conv]
 
-logging.basicConfig(level=logging.INFO, filename='sa-gpu.log')
-#logging.basicConfig(level=logging.INFO)
-tsk = autotvm.task.Task(conv, [226, 226, 3, 3, 64, 64, 1, 'float32'], {})
+#logging.basicConfig(level=logging.INFO, filename='rnd-conv1.log')
+logging.basicConfig(level=logging.INFO, filename='rnd-conv2.log')
+#tsk = autotvm.task.Task(conv, [226, 226, 3, 3, 64, 64, 1, 'float32'], {})
+tsk = autotvm.task.Task(conv, [17, 17, 3, 3, 512, 512, 1, 'float32'], {})
 tgt = tvm.target.create('cuda -model=p4000')
 tsk.init_space(tgt, None)
 print(tsk.config_space)
 
-#tuner = autotvm.tuner.RandomTuner(tsk)
+tuner = autotvm.tuner.RandomTuner(tsk)
 #tuner = autotvm.tuner.GATuner(tsk, pop_size=128, elite_num=4)
 #tuner = autotvm.tuner.XGBTuner(tsk, tgt, 16, 4)
-tuner = SATuner(tsk, 16, 960)
+#tuner = SATuner(tsk, 16, 960)
 
 tuner.add_callback(autotvm.callback.SingleBestRecorder())
 
 fmeature = autotvm.fleet.get_measure_batch(
-    autotvm.fleet.create('titanx', timeout=20.0),
+    autotvm.fleet.create('titanx', timeout=5.0),
     tgt, 'llvm', repeat=5,
     retry_failures=None,
     replay_db=None,
