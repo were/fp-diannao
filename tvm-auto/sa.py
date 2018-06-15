@@ -63,7 +63,7 @@ class SATuner(Tuner):
             res = results[_i]
             sol, old_score = self.pool[i]
             if res.error_no == 0:
-                new_score = inp.task.flop / np.mean(res.runs) / 2.5e12
+                new_score = inp.task.flop / np.mean(res.costs) / 2.5e12
             else:
                 new_score = 0.0
             if new_score > old_score:
@@ -99,6 +99,7 @@ class SATuner(Tuner):
                 while temp in self.visited:
                     temp = _explore(temp)
                 self.exec_pool[i] = temp
+                self.visited.add(temp)
             
 
     def _i_to_vec(self, num):
